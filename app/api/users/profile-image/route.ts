@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { setUserProfileImage } from '@/lib/in-memory-store';
 import { publishEvent } from '@/lib/realtime-bus';
+import { redisEnabled, redisSetProfileImage } from '@/lib/redis-store';
+
+export const runtime = 'nodejs';
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
@@ -34,7 +37,9 @@ export async function PATCH(request: NextRequest) {
       profileImage = trimmed;
     }
 
-    const user = setUserProfileImage(userId, profileImage);
+    const user = redisEnabled()
+      ? await redisSetProfileImage(userId, profileImage)
+      : setUserProfileImage(userId, profileImage);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
@@ -50,4 +55,3 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
-

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { addMessage, getMessageById, getMessages, isBlocked } from '@/lib/in-memory-store';
 import { publishEvent } from '@/lib/realtime-bus';
+import { redisAddMessage, redisEnabled, redisGetMessages } from '@/lib/redis-store';
+
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   const roomId = request.nextUrl.searchParams.get('room_id');
@@ -13,8 +16,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    let data = getMessages(roomId, limit);
-    if (currentUserId) {
+    let data = redisEnabled()
+      ? await redisGetMessages(roomId, limit, currentUserId)
+      : getMessages(roomId, limit);
+    if (!redisEnabled() && currentUserId) {
       data = data.filter((message) => !isBlocked(currentUserId, message.user_id));
     }
     return NextResponse.json(data || []);
@@ -39,7 +44,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = addMessage(room_id, user_id, normalizedContent);
+    const result = redisEnabled()
+      ? await redisAddMessage(room_id, user_id, normalizedContent)
+      : addMessage(room_id, user_id, normalizedContent);
     if (!result.ok) {
       if (result.error === 'rate_limited') {
         return NextResponse.json(
@@ -53,7 +60,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const hydrated = getMessageById(room_id, result.message.id) || result.message;
+    const hydrated = redisEnabled()
+      ? result.message
+      : getMessageById(room_id, result.message.id) || result.message;
     void publishEvent({
       type: 'message_created',
       room_id,

@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listOnlineUsers, touchUser } from '@/lib/in-memory-store';
+import { redisEnabled, redisListOnlineUsers, redisTouchUser } from '@/lib/redis-store';
+
+export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id');
     if (userId) {
-      touchUser(userId);
+      if (redisEnabled()) {
+        await redisTouchUser(userId);
+      } else {
+        touchUser(userId);
+      }
     }
 
-    const users = listOnlineUsers(50);
+    const users = redisEnabled() ? await redisListOnlineUsers(50) : listOnlineUsers(50);
 
     return NextResponse.json({
       success: true,

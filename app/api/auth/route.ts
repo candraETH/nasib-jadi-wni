@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getOrCreateUser, getUserById, setUserStatus } from '@/lib/in-memory-store';
 import { publishEvent } from '@/lib/realtime-bus';
+import {
+  redisEnabled,
+  redisGetOrCreateUser,
+  redisGetUserById,
+  redisSetUserStatus,
+} from '@/lib/redis-store';
+
+export const runtime = 'nodejs';
 
 // GET user info
 export async function GET(request: NextRequest) {
@@ -11,7 +19,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No user ID' }, { status: 401 });
     }
 
-    const user = getUserById(userId);
+    const user = redisEnabled() ? await redisGetUserById(userId) : getUserById(userId);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
@@ -29,7 +37,13 @@ export async function POST(request: NextRequest) {
 
   try {
     if (normalizedNickname) {
-      const user = getOrCreateUser(normalizedNickname, request.ip || null);
+      const user = redisEnabled()
+        ? await redisGetOrCreateUser(normalizedNickname, request.ip || null)
+        : getOrCreateUser(normalizedNickname, request.ip || null);
+
+      if (!user) {
+        return NextResponse.json({ error: 'Auth failed' }, { status: 500 });
+      }
 
       // Set session cookie
       const cookieStore = await cookies();
@@ -66,7 +80,9 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const user = setUserStatus(userId, status);
+    const user = redisEnabled()
+      ? await redisSetUserStatus(userId, status)
+      : setUserStatus(userId, status);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
